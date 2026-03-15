@@ -136,8 +136,8 @@ it.effect("retries on 429 from Up API and eventually succeeds", () =>
     // Two 429s then one successful response — three total calls
     assert.equal(yield* Ref.get(callCount), 3)
     assert.equal(txns.length, 1)
-    // settledAt "2024-01-15T10:00:00+11:00" = 2024-01-14T23:00:00Z → date=20240114, amount=-450
-    assert.equal(txns[0].imported_id, "20240114-450-1")
+    // imported_id is now the stable Up Bank transaction id, not a date+amount derivation
+    assert.equal(txns[0].imported_id, "t1")
   }),
 )
 
@@ -359,7 +359,79 @@ it.effect(
 )
 
 // ---------------------------------------------------------------------------
-// Test 4 — Two separate sync runs sharing the same joint account
+// Test 4 — Regression: HELD → SETTLED must preserve imported_id
+//
+// Previously, imported_id was derived from dateTime (settledAt ?? createdAt).
+// When a HELD transaction (using createdAt) later settled with a settledAt
+// 1-2 days after createdAt, the imported_id changed — causing Actual Budget
+// to treat the settled version as a new transaction and import a duplicate.
+//
+// Fix: imported_id is now the stable Up Bank transaction id (externalId),
+// which never changes between HELD and SETTLED states.
+// ---------------------------------------------------------------------------
+
+it.effect(
+  "HELD then SETTLED: imported_id must stay stable across the transition",
+  () =>
+    Effect.gen(function* () {
+      const TRANSACTION_ID = "tx-coffee-abc123"
+
+      // First seen as HELD — settledAt is null, so dateTime = createdAt
+      // createdAt "2024-01-15T09:00:00+11:00" = UTC 2024-01-14T22:00:00Z → date part "20240114"
+      const heldTx = makeTransaction(TRANSACTION_ID, {
+        status: "HELD",
+        description: "Coffee",
+        amountBaseUnits: -450,
+        settledAt: null,
+      })
+
+      // Same Up Bank transaction, now settled 2 days later
+      // settledAt "2024-01-17T10:00:00+11:00" = UTC 2024-01-16T23:00:00Z → date part "20240116"
+      const settledTx = makeTransaction(TRANSACTION_ID, {
+        status: "SETTLED",
+        description: "Coffee",
+        amountBaseUnits: -450,
+        settledAt: "2024-01-17T10:00:00+11:00",
+      })
+
+      const makeLayer = (tx: unknown) =>
+        makeUpTestLayer((req) =>
+          Effect.succeed(HttpClientResponse.fromWeb(req, makePage([tx], null))),
+        )
+
+      const opts = {
+        accounts: [
+          { bankAccountId: "checking", actualAccountId: "actual-checking" },
+        ],
+        syncDuration: Duration.days(30),
+        categorize: false,
+        categories: testCategories,
+        payees: testPayees,
+      }
+
+      const heldResults = yield* runCollect(opts).pipe(
+        Effect.provide(makeLayer(heldTx)),
+      )
+      const settledResults = yield* runCollect(opts).pipe(
+        Effect.provide(makeLayer(settledTx)),
+      )
+
+      const heldId = heldResults[0].ids[0]
+      const settledId = settledResults[0].ids[0]
+
+      // Both calls represent the same Up Bank transaction. The imported_id must
+      // be identical so that Actual Budget's findImported can deduplicate them
+      // and update the existing record rather than inserting a second one.
+      assert.equal(
+        heldId,
+        settledId,
+        `imported_id changed on settlement: HELD="${heldId}" SETTLED="${settledId}"`,
+      )
+    }),
+)
+
+// ---------------------------------------------------------------------------
+// Test 5 — Two separate sync runs sharing the same joint account
 // ---------------------------------------------------------------------------
 
 it.effect(
