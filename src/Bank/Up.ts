@@ -188,6 +188,7 @@ class Transaction extends Schema.Class<Transaction>("Transaction")({
       cleared,
       category: this.relationships.category.data?.id,
       transfer: transferId,
+      externalId: this.id,
     }
 
     // Perk-up / Happy Hour cashback: emit as a separate incoming transaction
@@ -199,6 +200,7 @@ class Transaction extends Schema.Class<Transaction>("Transaction")({
         payee: cb.description,
         notes: baseNotes,
         cleared,
+        externalId: `${this.id}:cashback`,
       }
       return [base, cashbackTx]
     }

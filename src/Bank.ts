@@ -36,6 +36,7 @@ export interface AccountTransaction {
   readonly cleared?: boolean
   readonly category?: string
   readonly transfer?: string
+  readonly externalId?: string
 }
 
 export const AccountTransactionOrder = Order.Struct({

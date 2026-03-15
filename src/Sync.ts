@@ -186,6 +186,7 @@ export const run = Effect.fnUntraced(function* (options: {
 const makeImportId = () => {
   const counters = new Map<string, number>()
   return (accountId: string, self: AccountTransaction) => {
+    if (self.externalId !== undefined) return self.externalId
     const dateParts = DateTime.toParts(self.dateTime)
     const dateString = `${dateParts.year.toString().padStart(4, "0")}${dateParts.month.toString().padStart(2, "0")}${dateParts.day.toString().padStart(2, "0")}`
     const amountInt = amountToInt(self.amount)
