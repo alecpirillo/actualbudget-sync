@@ -160,7 +160,7 @@ class Transaction extends Schema.Class<Transaction>("Transaction")({
   }),
 }) {
   accountTransactions(): NonEmptyReadonlyArray<AccountTransaction> {
-    const dateTime = this.attributes.settledAt ?? this.attributes.createdAt
+    const dateTime = this.attributes.createdAt
     const cleared = this.attributes.status === "SETTLED"
     const amount = moneyToBigDecimal(this.attributes.amount)
     const description = this.attributes.description
