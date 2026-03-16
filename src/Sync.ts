@@ -132,10 +132,21 @@ export const run = Effect.fnUntraced(function* (options: {
     payees,
   })
 
-  for (const { transactions, ids, actualAccountId } of results) {
-    const alreadyImported = yield* actual.findImported(ids, actualAccountId)
-    let toImport: typeof transactions = []
-    const updates = Array.empty<Fiber.Fiber<unknown, ActualError>>()
+  // Pre-collect alreadyImported for all accounts before any updates or imports
+  const allAlreadyImported = yield* Effect.forEach(
+    results,
+    ({ ids, actualAccountId }) =>
+      actual
+        .findImported(ids, actualAccountId)
+        .pipe(Effect.map((imported) => ({ actualAccountId, imported }))),
+  )
+
+  // Pass 1: apply all updates (cleared + payee name + transfer payee correction)
+  const allUpdates = Array.empty<Fiber.Fiber<unknown, ActualError>>()
+  for (const { transactions, actualAccountId } of results) {
+    const { imported: alreadyImported } = allAlreadyImported.find(
+      (r) => r.actualAccountId === actualAccountId,
+    )!
     for (const transaction of transactions) {
       if (options.clearedOnly && !transaction.cleared) {
         continue
@@ -143,9 +154,11 @@ export const run = Effect.fnUntraced(function* (options: {
 
       const existing = alreadyImported.get(transaction.imported_id)
       if (!existing) {
-        toImport.push(transaction)
-      } else if (transaction.cleared && !existing.cleared) {
-        updates.push(
+        continue
+      }
+
+      if (transaction.cleared && !existing.cleared) {
+        allUpdates.push(
           yield* Effect.forkChild(
             actual.use((_) =>
               _.updateTransaction(existing.id, {
@@ -166,7 +179,7 @@ export const run = Effect.fnUntraced(function* (options: {
           transaction.payee_name !== existing.imported_payee &&
           existingPayee.name === existing.imported_payee
         ) {
-          updates.push(
+          allUpdates.push(
             yield* Effect.forkChild(
               actual.use((_) =>
                 _.updatePayee(existingPayee.id, {
@@ -177,9 +190,39 @@ export const run = Effect.fnUntraced(function* (options: {
           )
         }
       }
+
+      if ("payee" in transaction && existing.payee !== transaction.payee) {
+        allUpdates.push(
+          yield* Effect.forkChild(
+            actual.use((_) =>
+              _.updateTransaction(existing.id, {
+                payee: transaction.payee,
+              }),
+            ),
+          ),
+        )
+      }
+    }
+  }
+  yield* Fiber.awaitAll(allUpdates)
+
+  // Pass 2: collect new transactions and import them
+  for (const { transactions, actualAccountId } of results) {
+    const { imported: alreadyImported } = allAlreadyImported.find(
+      (r) => r.actualAccountId === actualAccountId,
+    )!
+    let toImport: typeof transactions = []
+    for (const transaction of transactions) {
+      if (options.clearedOnly && !transaction.cleared) {
+        continue
+      }
+
+      const existing = alreadyImported.get(transaction.imported_id)
+      if (!existing) {
+        toImport.push(transaction)
+      }
     }
     yield* actual.use((_) => _.importTransactions(actualAccountId, toImport))
-    yield* Fiber.awaitAll(updates)
   }
 })
 
