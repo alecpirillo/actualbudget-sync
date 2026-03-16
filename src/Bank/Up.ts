@@ -78,6 +78,15 @@ export const UpBankLayer = Effect.gen(function* () {
     accountId: string,
     options: { readonly since: DateTime.Utc },
   ) {
+    yield* client.get(`${baseUrl}/accounts/${accountId}`).pipe(
+      Effect.flatMap(HttpClientResponse.schemaBodyJson(AccountResponse)),
+      Effect.flatMap((account) =>
+        Effect.logInfo(
+          `${account.data.attributes.displayName} balance: $${BigDecimal.toNumberUnsafe(moneyToBigDecimal(account.data.attributes.balance)).toFixed(2)}`,
+        ),
+      ),
+      Effect.ignore,
+    )
     yield* Effect.logInfo("Fetching transactions from Up Bank...")
     let count = 0
     const txs = yield* transactions(
@@ -219,3 +228,12 @@ const PaginatedResponse = <S extends Schema.Top>(schema: S) =>
     data: Schema.Array(schema),
     links: Cursor,
   })
+
+const AccountResponse = Schema.Struct({
+  data: Schema.Struct({
+    attributes: Schema.Struct({
+      displayName: Schema.String,
+      balance: MoneyObject,
+    }),
+  }),
+})
