@@ -63,6 +63,12 @@ const clearedOnly = Flag.boolean("cleared-only").pipe(
   Flag.withAlias("C"),
 )
 
+const reImportDeleted = Flag.boolean("re-import-deleted").pipe(
+  Flag.withDescription(
+    "Re-import transactions that were previously deleted in Actual",
+  ),
+)
+
 const actualsync = Command.make("actualsync", {
   bank,
   accounts,
@@ -71,9 +77,18 @@ const actualsync = Command.make("actualsync", {
   timezone,
   syncDuration,
   clearedOnly,
+  reImportDeleted,
 }).pipe(
   Command.withHandler(
-    ({ accounts, categorize, categories, bank, syncDuration, clearedOnly }) =>
+    ({
+      accounts,
+      categorize,
+      categories,
+      bank,
+      syncDuration,
+      clearedOnly,
+      reImportDeleted,
+    }) =>
       Sync.run({
         accounts: Object.entries(accounts).map(
           ([actualAccountId, bankAccountId]) => ({
@@ -94,6 +109,7 @@ const actualsync = Command.make("actualsync", {
         ),
         syncDuration,
         clearedOnly,
+        reImportDeleted,
       }).pipe(Effect.provide(Layer.mergeAll(banks[bank], Actual.layer))),
   ),
   Command.provide(({ timezone }) => timezone),

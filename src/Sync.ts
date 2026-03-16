@@ -121,6 +121,7 @@ export const run = Effect.fnUntraced(function* (options: {
   }>
   readonly syncDuration: Duration.Duration
   readonly clearedOnly: boolean
+  readonly reImportDeleted: boolean
 }) {
   const actual = yield* Actual
   const categories = yield* actual.use((_) => _.getCategories())
@@ -133,7 +134,11 @@ export const run = Effect.fnUntraced(function* (options: {
   })
 
   for (const { transactions, ids, actualAccountId } of results) {
-    const alreadyImported = yield* actual.findImported(ids, actualAccountId)
+    const alreadyImported = yield* actual.findImported(
+      ids,
+      actualAccountId,
+      options.reImportDeleted,
+    )
     let toImport: typeof transactions = []
     const updates = Array.empty<Fiber.Fiber<unknown, ActualError>>()
     for (const transaction of transactions) {
