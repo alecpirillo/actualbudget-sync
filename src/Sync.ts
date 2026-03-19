@@ -7,7 +7,7 @@ import {
   DateTime,
   Duration,
   Effect,
-  Fiber,
+  FiberSet,
   pipe,
 } from "effect"
 import {
@@ -15,7 +15,7 @@ import {
   AccountTransactionOrder,
   Bank,
 } from "./Bank.ts"
-import { Actual, type ActualError } from "./Actual.ts"
+import { Actual } from "./Actual.ts"
 
 const bigDecimal100 = BigDecimal.fromNumberUnsafe(100)
 const amountToInt = (amount: BigDecimal.BigDecimal) =>
@@ -78,7 +78,8 @@ export const runCollect = Effect.fnUntraced(function* (options: {
         transactions,
         // oxlint-disable-next-line unicorn/no-array-sort
         Array.sort(AccountTransactionOrder),
-        Array.map((transaction) => {
+        // oxlint-disable-next-line oxc/no-map-spread
+        Array.map((transaction): ImportTransaction => {
           const imported_id = importId(bankAccountId, transaction)
           const category = options.categorize && categoryId(transaction)
           const transferPayee =
@@ -109,6 +110,28 @@ export const runCollect = Effect.fnUntraced(function* (options: {
   )
 })
 
+type ImportTransaction =
+  | {
+      category?: string | undefined
+      amount: number
+      notes: string | undefined
+      cleared: boolean | undefined
+      payee: string
+      account: string
+      imported_id: string
+      date: string
+    }
+  | {
+      category?: string | undefined
+      amount: number
+      notes: string | undefined
+      cleared: boolean | undefined
+      payee_name: string
+      account: string
+      imported_id: string
+      date: string
+    }
+
 export const run = Effect.fnUntraced(function* (options: {
   readonly accounts: ReadonlyArray<{
     readonly bankAccountId: string
@@ -123,6 +146,7 @@ export const run = Effect.fnUntraced(function* (options: {
   readonly clearedOnly: boolean
 }) {
   const actual = yield* Actual
+  const fibers = yield* FiberSet.make()
   const categories = yield* actual.use((_) => _.getCategories())
   const payees = yield* actual.use((_) => _.getPayees())
 
@@ -132,10 +156,11 @@ export const run = Effect.fnUntraced(function* (options: {
     payees,
   })
 
+  const newTransactions = new Map<string, Array<ImportTransaction>>()
+
   for (const { transactions, ids, actualAccountId } of results) {
     const alreadyImported = yield* actual.findImported(ids, actualAccountId)
-    let toImport: typeof transactions = []
-    const updates = Array.empty<Fiber.Fiber<unknown, ActualError>>()
+
     for (const transaction of transactions) {
       if (options.clearedOnly && !transaction.cleared) {
         continue
@@ -143,19 +168,26 @@ export const run = Effect.fnUntraced(function* (options: {
 
       const existing = alreadyImported.get(transaction.imported_id)
       if (!existing) {
-        toImport.push(transaction)
-      } else if (transaction.cleared && !existing.cleared) {
-        updates.push(
-          yield* Effect.forkChild(
-            actual.use((_) =>
-              _.updateTransaction(existing.id, {
-                cleared: true,
-                amount: transaction.amount,
-                ...(!existing.category && transaction.category
-                  ? { category: transaction.category }
-                  : {}),
-              }),
-            ),
+        let arr = newTransactions.get(actualAccountId)
+        if (!arr) {
+          arr = []
+          newTransactions.set(actualAccountId, arr)
+        }
+        arr.push(transaction)
+        continue
+      }
+
+      if (transaction.cleared && !existing.cleared) {
+        yield* FiberSet.run(
+          fibers,
+          actual.use((_) =>
+            _.updateTransaction(existing.id, {
+              cleared: true,
+              amount: transaction.amount,
+              ...(!existing.category && transaction.category
+                ? { category: transaction.category }
+                : {}),
+            }),
           ),
         )
 
@@ -166,22 +198,39 @@ export const run = Effect.fnUntraced(function* (options: {
           transaction.payee_name !== existing.imported_payee &&
           existingPayee.name === existing.imported_payee
         ) {
-          updates.push(
-            yield* Effect.forkChild(
-              actual.use((_) =>
-                _.updatePayee(existingPayee.id, {
-                  name: transaction.payee_name,
-                }),
-              ),
+          yield* FiberSet.run(
+            fibers,
+            actual.use((_) =>
+              _.updatePayee(existingPayee.id, {
+                name: transaction.payee_name,
+              }),
             ),
           )
         }
       }
+
+      if ("payee" in transaction && existing.payee !== transaction.payee) {
+        yield* FiberSet.run(
+          fibers,
+          actual.use((_) =>
+            _.updateTransaction(existing.id, {
+              payee: transaction.payee,
+            }),
+          ),
+        )
+      }
     }
-    yield* actual.use((_) => _.importTransactions(actualAccountId, toImport))
-    yield* Fiber.awaitAll(updates)
   }
-})
+  yield* FiberSet.awaitEmpty(fibers)
+
+  for (const [actualAccountId, transactions] of newTransactions) {
+    yield* FiberSet.run(
+      fibers,
+      actual.use((_) => _.importTransactions(actualAccountId, transactions)),
+    )
+  }
+  yield* FiberSet.awaitEmpty(fibers)
+}, Effect.scoped)
 
 const makeImportId = () => {
   const counters = new Map<string, number>()
