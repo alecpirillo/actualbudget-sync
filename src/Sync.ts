@@ -243,10 +243,12 @@ export const run = Effect.fnUntraced(function* (options: {
       // already imported the opposite side — Actual will have auto-created a
       // counterpart in this account. If one exists, skip importing to avoid
       // creating a second transfer pair (and duplicate counterparts).
+      // "payee" (a payee ID) identifies a transfer; "payee_name" identifies a regular transaction.
       if ("payee" in transaction) {
         const counterpart = yield* actual.findTransferCounterpart(
           actualAccountId,
           transaction.amount,
+          transaction.date,
         )
         if (Option.isSome(counterpart)) continue
       }
