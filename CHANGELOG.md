@@ -1,5 +1,11 @@
 # @alecpirillo/actualbudget-sync
 
+## 0.5.0
+
+### Minor Changes
+
+- [#4](https://github.com/alecpirillo/actualbudget-sync/pull/4) [`6a4bb9a`](https://github.com/alecpirillo/actualbudget-sync/commit/6a4bb9a99bb9d671bb957a0e6592edfcf6c65eef) Thanks [@alecpirillo](https://github.com/alecpirillo)! - feat: (UP) add --transfer-accounts flag for cross-user 2UP deduplication
+
 ## 0.4.11
 
 ### Patch Changes
