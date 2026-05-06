@@ -1,4 +1,4 @@
-# @tim-smart/actualbudget-sync
+# @alecpirillo/actualbudget-sync
 
 A CLI to sync with Actual Budget.
 
@@ -20,7 +20,7 @@ Features:
 You can install the CLI using npm:
 
 ```bash
-npm install -g @tim-smart/actualbudget-sync
+npm install -g @alecpirillo/actualbudget-sync
 ```
 
 Here is a quick example of how to use the CLI:
