@@ -13,7 +13,17 @@ import {
   Stream,
 } from "effect"
 import * as Api from "@actual-app/api"
-import ApiPackage from "@actual-app/api/package.json" with { type: "json" }
+import * as fs from "node:fs"
+import { createRequire } from "node:module"
+import * as path from "node:path"
+
+const require = createRequire(import.meta.url)
+const ApiPackage = JSON.parse(
+  fs.readFileSync(
+    path.join(path.dirname(path.dirname(require.resolve("@actual-app/api"))), "package.json"),
+    "utf8"
+  )
+) as { version: string }
 import { Npm } from "./Npm.ts"
 import { NodeHttpClient } from "@effect/platform-node"
 import type { TransactionEntity } from "@actual-app/api/@types/loot-core/src/types/models/transaction.js"
