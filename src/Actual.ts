@@ -16,6 +16,7 @@ import * as Api from "@actual-app/api"
 import * as fs from "node:fs"
 import { createRequire } from "node:module"
 import * as path from "node:path"
+import { compareVersions } from "compare-versions"
 
 const require = createRequire(import.meta.url)
 const ApiPackage = JSON.parse(
@@ -76,11 +77,11 @@ export class Actual extends ServiceMap.Service<Actual>()("Actual", {
 
     const api = yield* Effect.gen(function* () {
       const version = yield* serverVersion
-      if (version === ApiPackage.version) {
+      if (compareVersions(version, ApiPackage.version) <= 0) {
         return Api
       }
       yield* Effect.logInfo(
-        "Actual API version mismatch. Attempting to update.",
+        "Actual API version mismatch (server is newer). Attempting to update.",
       ).pipe(
         Effect.annotateLogs({
           serverVersion: version,
